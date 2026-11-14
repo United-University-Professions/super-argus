@@ -34,7 +34,7 @@ Not covered by this setup: the Expo native dev loop (`npx expo start`, for iOS/A
 
 ## Ingest (Phase 2)
 
-`POST /api/v1/ingest/push` with header `X-Argus-Key: <api key>` (mint one via `POST /api/v1/api-keys` as admin).
+`POST /api/v1/ingest/push` with header `X-Argus-Key: <api key>` (mint one via `POST /api/v1/api-keys` as admin, the Settings page's API keys card, or `argus apikey create <name>` -- see below).
 Body is NDJSON, optionally gzip (`Content-Encoding: gzip`), max 5 MB:
 
 ```
@@ -233,6 +233,8 @@ Both run before the WAL write, so redacted text never touches disk. They are off
 ### Restarting services
 
 Admins can restart a systemd unit or a Kubernetes pod's workload from a service's page in the web UI (**Restart…**, with a confirmation) or with `argus restart <service>` (`ARGUS_EMAIL`/`ARGUS_PASSWORD` for an admin, `ARGUS_URL` if not `localhost:8080`; `-target N` when a service has several, `-yes` to skip the prompt). Both call `POST /api/v1/services/{name}/restart`.
+
+API keys work the same way: the Settings page's API keys card, or `argus apikey list` / `argus apikey create <name> [-label L] [-rate-limit N]` / `argus apikey revoke <id> [-yes]` (same `ARGUS_EMAIL`/`ARGUS_PASSWORD`/`ARGUS_URL` as `restart`). `create` prints the plaintext key exactly once -- it isn't stored anywhere and can't be fetched again, by either the CLI or the UI.
 
 - **The server never executes anything.** It queues the request in the `actions` table; the agent that owns the target polls for it (outbound only), checks its own allowlist, runs it and reports back. Every request, refused ones included, stays in `GET /api/v1/actions` with who asked and the result. Unclaimed requests expire after 2 minutes, and a target can't be restarted again within 30 seconds.
 - **Off by default.** An agent restarts nothing unless started with `ARGUS_ACTIONS_ENABLED=true` and an allowlist (`ARGUS_ACTION_UNITS` / `ARGUS_ACTION_NAMESPACES`); systemd also needs a polkit rule and Kubernetes a RoleBinding. See [agent/README.md](agent/README.md#restart-actions) and, on NixOS, `services.argus.agent.actions`.

@@ -24,6 +24,11 @@ const usage = `usage: argus [command]
                      agent and wait for the result (admin; set ARGUS_EMAIL and
                      ARGUS_PASSWORD, and ARGUS_URL if not localhost:8080).
                      flags: -url, -target N (when there are several), -yes
+  apikey list                     list API keys (admin; ARGUS_EMAIL/ARGUS_PASSWORD)
+  apikey create <name>            mint a key, printing the plaintext once
+                     flags: -url, -label L, -rate-limit N
+  apikey revoke <id>              revoke a key
+                     flags: -url, -yes
 `
 
 // runCommand runs a subcommand and returns the process exit code.
@@ -35,6 +40,8 @@ func runCommand(name string, args []string, log *slog.Logger) int {
 		return runTUI(args, log)
 	case "restart":
 		return runRestart(args, log)
+	case "apikey":
+		return runApikey(args, log)
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 		return 0

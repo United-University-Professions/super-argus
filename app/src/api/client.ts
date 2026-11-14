@@ -16,6 +16,9 @@ export type Channel = components['schemas']['Channel'];
 export type ChannelInput = components['schemas']['ChannelInput'];
 export type Action = components['schemas']['Action'];
 export type RestartTarget = components['schemas']['RestartTarget'];
+export type ApiKey = components['schemas']['ApiKey'];
+export type CreateApiKeyRequest = components['schemas']['CreateApiKeyRequest'];
+export type CreatedApiKey = components['schemas']['CreatedApiKey'];
 
 /** What the API client needs from the session layer (injected to avoid an import cycle). */
 export interface SessionBridge {
