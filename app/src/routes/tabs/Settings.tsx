@@ -1,4 +1,5 @@
 import { useSession } from '@/auth/session';
+import { ApiKeysCard } from '@/components/ApiKeysCard';
 import { ChannelsCard } from '@/components/ChannelsCard';
 import { Button, Card } from '@/components/ui';
 import { useIsAdmin } from '@/hooks/useAlerts';
@@ -22,6 +23,7 @@ export function Settings() {
         <span style={{ color: t.textDim }}>Server: {origin || 'this site'}</span>
       </Card>
       {isAdmin && <ChannelsCard />}
+      {isAdmin && <ApiKeysCard />}
       <Button title="Sign out" variant="ghost" onPress={() => void signOut()} />
     </div>
   );
