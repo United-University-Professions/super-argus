@@ -272,3 +272,37 @@ func TestKubernetesRestart(t *testing.T) {
 	}
 	require.NotContains(t, f.claimed, "elsewhere", "pods on other nodes are left to their node's agent")
 }
+
+func TestKubernetesRestartWorkloadAllowlist(t *testing.T) {
+	podAct := func(id, ns, pod string) action {
+		return action{ID: id, Kind: kindK8s, Target: map[string]string{"namespace": ns, "pod": pod}}
+	}
+	f := newFakeArgus(t,
+		podAct("deploy", "prod", "web-7d9f8b6c5d-x2k4p"),
+		podAct("sts", "prod", "batch-1"),
+		podAct("bare", "prod", "solo"),
+	)
+	fk := &fakeKube{
+		pods: map[string][]ownerRef{
+			"prod/web-7d9f8b6c5d-x2k4p": {{Kind: "ReplicaSet", Name: "web-7d9f8b6c5d"}},
+			"prod/batch-1":              {{Kind: "StatefulSet", Name: "batch"}},
+			"prod/solo":                 nil,
+		},
+		replsets: map[string]ownerRef{"prod/web-7d9f8b6c5d": {Kind: "Deployment", Name: "web"}},
+	}
+	r := newKubeRunner(t, f, fk)
+	r.workloads = map[string]bool{"web": true}
+	require.NoError(t, r.poll(context.Background()))
+
+	require.True(t, f.results["deploy"].OK, f.results["deploy"].Result)
+	require.Contains(t, fk.calls, "PATCH /apis/apps/v1/namespaces/prod/deployments/web")
+
+	require.False(t, f.results["sts"].OK, "statefulset not in the workload allowlist")
+	require.Contains(t, f.results["sts"].Result, "allowlist")
+
+	require.False(t, f.results["bare"].OK, "bare pod name not in the workload allowlist")
+	require.Contains(t, f.results["bare"].Result, "allowlist")
+
+	require.NotContains(t, fk.calls, "PATCH /apis/apps/v1/namespaces/prod/statefulsets/batch", "a refused workload is never patched")
+	require.NotContains(t, fk.calls, "DELETE /api/v1/namespaces/prod/pods/solo", "a refused bare pod is never deleted")
+}
