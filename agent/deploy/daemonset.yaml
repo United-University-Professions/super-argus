@@ -93,6 +93,9 @@ spec:
             # Let Argus admins restart workloads. Off unless enabled AND a namespace is listed.
             # - { name: ARGUS_ACTIONS_ENABLED, value: "true" }
             # - { name: ARGUS_ACTION_NAMESPACES, value: prod }
+            # Optional: further restrict restarts to specific workload names
+            # within those namespaces (e.g. when prod and dev share one namespace).
+            # - { name: ARGUS_ACTION_WORKLOADS, value: api,worker }
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits: { memory: 256Mi }

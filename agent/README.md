@@ -35,6 +35,7 @@ Separately from logs, the agent reports whether each service is actually running
 | `ARGUS_ACTIONS_ENABLED` | | `true` lets Argus admins restart things through this agent (see Restart actions) |
 | `ARGUS_ACTION_UNITS` | | journal mode: units the agent may restart, e.g. `nginx,cups.service`; empty means none |
 | `ARGUS_ACTION_NAMESPACES` | | kubernetes mode: namespaces the agent may restart workloads in; empty means none |
+| `ARGUS_ACTION_WORKLOADS` | | kubernetes mode: workload (Deployment/StatefulSet/DaemonSet, or bare pod) names the agent may restart, e.g. `api,worker`; empty means any workload in an allowed namespace |
 | `ARGUS_ACTION_HOST` | `os.Hostname()` | the `host` label this agent answers to; must match the journald hostname |
 
 ## Install
@@ -54,7 +55,7 @@ Kubernetes: build `Dockerfile` from the repo root, push it, then follow the head
 Argus admins can restart a systemd unit or a pod from the UI or `POST /api/v1/services/{name}/restart`. The server only queues the request; the agent that owns the target polls for it (outbound only, no listener), checks its **own** allowlist, runs it and reports the result. Every request, refused ones included, is kept in `GET /api/v1/actions`.
 
 - **systemd:** needs `ARGUS_ACTIONS_ENABLED=true`, `ARGUS_ACTION_UNITS`, and a polkit rule so the unprivileged agent can restart exactly those units: `deploy/argus-agent.rules` (the NixOS module's `services.argus.agent.actions` does both). Without the rule the restart fails with an authorization error.
-- **Kubernetes:** needs `ARGUS_ACTIONS_ENABLED=true`, `ARGUS_ACTION_NAMESPACES`, and a RoleBinding per allowed namespace (example at the end of `deploy/daemonset.yaml`). A pod owned by a Deployment, StatefulSet or DaemonSet gets a rolling restart (the `kubectl rollout restart` annotation); a pod with no owner is deleted. Pods owned by anything else (Jobs, operators) are refused.
+- **Kubernetes:** needs `ARGUS_ACTIONS_ENABLED=true`, `ARGUS_ACTION_NAMESPACES`, and a RoleBinding per allowed namespace (example at the end of `deploy/daemonset.yaml`). Optionally also set `ARGUS_ACTION_WORKLOADS` to further restrict restarts to specific workload names within those namespaces (useful when, say, prod and dev share one namespace). A pod owned by a Deployment, StatefulSet or DaemonSet gets a rolling restart (the `kubectl rollout restart` annotation); a pod with no owner is deleted. Pods owned by anything else (Jobs, operators) are refused.
 - Only the agent on the pod's node acts on a pod, and only the agent on the matching host acts on a unit.
 
 ## Behavior to know

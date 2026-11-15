@@ -56,6 +56,7 @@ type actionRunner struct {
 	// kubernetes side (kubernetes mode)
 	k8s        *kubeClient
 	namespaces map[string]bool
+	workloads  map[string]bool
 	podsDir    string
 
 	// pause between poll cycles; keeps a skipped action from causing a hot loop.
@@ -157,7 +158,7 @@ func (r *actionRunner) handle(ctx context.Context, a action) {
 		if !r.namespaces[ns] {
 			deny = "namespace " + ns + " is not in this agent's restart allowlist"
 		}
-		restart = func(ctx context.Context) (string, error) { return r.k8s.restartPod(ctx, ns, pod) }
+		restart = func(ctx context.Context) (string, error) { return r.k8s.restartPod(ctx, ns, pod, r.workloads) }
 	default:
 		return
 	}
@@ -303,8 +304,11 @@ var workloadPlural = map[string]string{"Deployment": "deployments", "StatefulSet
 // restartPod restarts the workload that owns the pod (rolling, via the
 // restartedAt annotation, as `kubectl rollout restart` does), or deletes a pod
 // that has no owner. Pods owned by anything else (Jobs, operators...) are
-// refused rather than guessed at.
-func (k *kubeClient) restartPod(ctx context.Context, ns, pod string) (string, error) {
+// refused rather than guessed at. allowedWorkloads, when non-empty, further
+// restricts restarts to the named Deployment/StatefulSet/DaemonSet (or, for a
+// bare pod, its own name); empty means unrestricted, same as before this
+// existed.
+func (k *kubeClient) restartPod(ctx context.Context, ns, pod string, allowedWorkloads map[string]bool) (string, error) {
 	n, p := url.PathEscape(ns), url.PathEscape(pod)
 	var pm objMeta
 	if err := k.do(ctx, http.MethodGet, "/api/v1/namespaces/"+n+"/pods/"+p, "", nil, &pm); err != nil {
@@ -312,6 +316,9 @@ func (k *kubeClient) restartPod(ctx context.Context, ns, pod string) (string, er
 	}
 	owners := pm.Metadata.OwnerReferences
 	if len(owners) == 0 {
+		if len(allowedWorkloads) > 0 && !allowedWorkloads[pod] {
+			return "", fmt.Errorf("%s/%s is not in this agent's restart allowlist", ns, pod)
+		}
 		if err := k.do(ctx, http.MethodDelete, "/api/v1/namespaces/"+n+"/pods/"+p, "", nil, nil); err != nil {
 			return "", err
 		}
@@ -332,6 +339,9 @@ func (k *kubeClient) restartPod(ctx context.Context, ns, pod string) (string, er
 	if !ok {
 		return "", fmt.Errorf("pod is owned by %s %s, which this agent does not restart", o.Kind, o.Name)
 	}
+	if len(allowedWorkloads) > 0 && !allowedWorkloads[o.Name] {
+		return "", fmt.Errorf("%s/%s is not in this agent's restart allowlist", ns, o.Name)
+	}
 	patch, _ := json.Marshal(map[string]any{"spec": map[string]any{"template": map[string]any{"metadata": map[string]any{
 		"annotations": map[string]string{restartedAtAnnotation: k.now().UTC().Format(time.RFC3339)}}}}})
 	path := "/apis/apps/v1/namespaces/" + n + "/" + plural + "/" + url.PathEscape(o.Name)
@@ -343,8 +353,10 @@ func (k *kubeClient) restartPod(ctx context.Context, ns, pod string) (string, er
 
 // newActionRunner wires restart actions for the agent's mode, or returns nil
 // (after logging why) if they cannot be enabled. Allowlists come from
-// ARGUS_ACTION_UNITS (journal mode) and ARGUS_ACTION_NAMESPACES (kubernetes
-// mode); an empty list means nothing can be restarted.
+// ARGUS_ACTION_UNITS (journal mode) and ARGUS_ACTION_NAMESPACES plus the
+// optional ARGUS_ACTION_WORKLOADS (kubernetes mode); an empty namespace list
+// means nothing can be restarted, an empty workload list means every
+// workload in an allowed namespace can.
 func newActionRunner(baseURL, key, mode, podsDir string) *actionRunner {
 	host := env("ARGUS_ACTION_HOST", "")
 	if host == "" {
@@ -365,7 +377,8 @@ func newActionRunner(baseURL, key, mode, podsDir string) *actionRunner {
 		}
 		r.k8s = k
 		r.namespaces = parseSet(os.Getenv("ARGUS_ACTION_NAMESPACES"))
-		log.Printf("argus-agent: restart actions enabled for namespaces=%d", len(r.namespaces))
+		r.workloads = parseSet(os.Getenv("ARGUS_ACTION_WORKLOADS"))
+		log.Printf("argus-agent: restart actions enabled for namespaces=%d workloads=%d", len(r.namespaces), len(r.workloads))
 	default:
 		return nil
 	}
