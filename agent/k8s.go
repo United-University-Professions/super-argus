@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 // kube names use this alphabet for generated suffixes (no vowels, no 0/1/3).
@@ -23,15 +25,43 @@ var (
 	logFile    = regexp.MustCompile(`^\d+\.log$`)
 )
 
+// runID matches a per-run identifier at the end of a name: a UUID (the RMS job
+// runner names each Job "<prefix>-<uuid>") or a long number (CronJobs append the
+// scheduled minute, e.g. prod-jobs-29412345). Left in the service name, every
+// run would show up as its own service.
+var runID = regexp.MustCompile(`-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d{6,})$`)
+
 // serviceFromPod maps a pod name to the workload that owns it, so replicas and
-// restarts share one service: api-7d9f8b6c5d-x2k4p -> api.
+// restarts share one service: api-7d9f8b6c5d-x2k4p -> api. Per-run IDs are
+// dropped too, so every run of a Job or CronJob maps to one service:
+// jobs-runner-prod-<uuid>-x2k4p -> jobs-runner-prod.
 func serviceFromPod(pod string) string {
+	svc := pod
 	for _, re := range []*regexp.Regexp{deployPod, genSuffix, ordinalPod} {
 		if m := re.FindStringSubmatch(pod); m != nil {
-			return m[1]
+			svc = m[1]
+			break
 		}
 	}
-	return pod
+	for {
+		trimmed := runID.ReplaceAllString(svc, "")
+		if trimmed == svc || trimmed == "" {
+			return svc
+		}
+		svc = trimmed
+	}
+}
+
+// isJobPod reports whether a pod belongs to a batch Job (including CronJob and
+// RMS job-runner pods). Those are meant to finish, so they are not liveness-
+// tracked: a finished job would otherwise report its service as down.
+func isJobPod(p *corev1.Pod) bool {
+	for _, o := range p.OwnerReferences {
+		if o.Kind == "Job" {
+			return true
+		}
+	}
+	return false
 }
 
 // podDirLabels parses a /var/log/pods directory name "<namespace>_<pod>_<uid>".
