@@ -87,6 +87,9 @@ func watchNodePods(ctx context.Context, cs kubernetes.Interface, node string, ro
 			if !ok {
 				continue
 			}
+			if isJobPod(pod) {
+				continue // batch pods finish by design; not liveness-tracked
+			}
 			if ev.Type == watch.Deleted {
 				roll.remove(pod.Name, report)
 				continue
@@ -105,6 +108,9 @@ type podRollup struct {
 }
 
 func (r *podRollup) update(p *corev1.Pod, report *LivenessReporter) {
+	if isJobPod(p) {
+		return
+	}
 	r.mu.Lock()
 	r.ready[p.Name] = p.Status.Phase == corev1.PodRunning && podReady(p)
 	report.Report(serviceFromPod(p.Name), "kubernetes", r.anyReady(serviceFromPod(p.Name)), string(p.Status.Phase))
