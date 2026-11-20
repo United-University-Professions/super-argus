@@ -34,6 +34,10 @@ import (
 	"time"
 )
 
+// maxBatchBytes flushes a batch once its lines total this much, keeping each
+// request under the server's 5 MiB limit even with long lines.
+const maxBatchBytes = 4 << 20
+
 // Config configures a Shipper.
 type Config struct {
 	// URL is the Argus base URL, e.g. http://localhost:8080.
@@ -181,29 +185,34 @@ func (s *Shipper) run() {
 	t := time.NewTicker(s.cfg.FlushEvery)
 	defer t.Stop()
 	batch := make([]entry, 0, s.cfg.BatchSize)
+	size := 0 // uncompressed bytes in batch
 	flush := func() {
 		if len(batch) > 0 {
 			s.deliver(batch)
 			batch = batch[:0]
+			size = 0
+		}
+	}
+	add := func(e entry) {
+		batch = append(batch, e)
+		size += len(e.Line)
+		// The server rejects requests over 5 MiB uncompressed (413), so cap by
+		// bytes as well as by line count.
+		if len(batch) >= s.cfg.BatchSize || size >= maxBatchBytes {
+			flush()
 		}
 	}
 	for {
 		select {
 		case e := <-s.queue:
-			batch = append(batch, e)
-			if len(batch) >= s.cfg.BatchSize {
-				flush()
-			}
+			add(e)
 		case <-t.C:
 			flush()
 		case <-s.stop:
 			for { // drain what is already queued, then stop
 				select {
 				case e := <-s.queue:
-					batch = append(batch, e)
-					if len(batch) >= s.cfg.BatchSize {
-						flush()
-					}
+					add(e)
 				default:
 					flush()
 					return

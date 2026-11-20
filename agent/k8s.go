@@ -148,7 +148,7 @@ func tailFile(ctx context.Context, hub *Hub, st *State, path string, labels map[
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { f.Close() }() // f is swapped when the file is rotated
 	if _, err := f.Seek(off, io.SeekStart); err != nil {
 		off = 0
 		_, _ = f.Seek(0, io.SeekStart)
@@ -193,7 +193,24 @@ func tailFile(ctx context.Context, hub *Hub, st *State, path string, labels map[
 			st.Forget(path)
 			return
 		}
-		if fi.Size() < off+int64(len(pending)) { // truncated or replaced
+		// Rotation: kubelet renames 0.log and creates a new 0.log. Our handle still
+		// points at the renamed file, which we have just read to EOF, so follow the
+		// path to the new file instead of mistaking its smaller size for truncation.
+		if cur, cerr := f.Stat(); cerr == nil && !os.SameFile(cur, fi) {
+			nf, oerr := os.Open(path)
+			if oerr != nil {
+				st.Forget(path)
+				return
+			}
+			f.Close()
+			f = nf
+			off, pending = 0, pending[:0]
+			partial.Reset()
+			r.Reset(f)
+			st.SetOffset(path, 0)
+			continue
+		}
+		if fi.Size() < off+int64(len(pending)) { // truncated in place
 			off, pending = 0, pending[:0]
 			_, _ = f.Seek(0, io.SeekStart)
 			r.Reset(f)

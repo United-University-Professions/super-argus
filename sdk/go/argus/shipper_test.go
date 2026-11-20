@@ -215,3 +215,23 @@ func TestTeeSendsToEveryHandler(t *testing.T) {
 	require.Contains(t, b.String(), "careful")
 	require.Contains(t, b.String(), "k=v")
 }
+
+func TestBatchIsCappedByBytes(t *testing.T) {
+	f := &fakeArgus{}
+	s := newShipper(t, f, func(c *Config) { c.BatchSize = 1000; c.MaxLineBytes = 1 << 20; c.FlushEvery = time.Hour })
+	big := strings.Repeat("x", 1<<20)
+	for i := 0; i < 10; i++ {
+		s.Send(time.Now(), big)
+	}
+	closeNow(s)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.got) < 3 { // 10 MiB at a ~4 MiB cap is at least 3 requests
+		t.Fatalf("want the 10 MiB split across requests, got %d", len(f.got))
+	}
+	for _, r := range f.got {
+		if len(r.entries) > 5 {
+			t.Fatalf("a request carried %d MiB-sized lines", len(r.entries))
+		}
+	}
+}
