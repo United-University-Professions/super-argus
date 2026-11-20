@@ -1,13 +1,14 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 )
 
 func TestHubEvictsIdleShippers(t *testing.T) {
 	h := NewHub("http://127.0.0.1:1", "k", nil)
-	defer h.Close(t.Context())
+	defer h.Close(context.Background())
 	h.Send(map[string]string{"service": "a", "pod": "a-1"}, time.Now(), "x")
 	h.Send(map[string]string{"service": "b", "pod": "b-1"}, time.Now(), "y")
 	if n := len(h.ships); n != 2 {
@@ -31,7 +32,7 @@ func TestHubEvictsIdleShippers(t *testing.T) {
 
 func TestHubSkipsLinesOlderThanServerAccepts(t *testing.T) {
 	h := NewHub("http://127.0.0.1:1", "k", nil)
-	defer h.Close(t.Context())
+	defer h.Close(context.Background())
 	h.Send(map[string]string{"service": "a"}, time.Now().Add(-48*time.Hour), "old")
 	if len(h.ships) != 0 {
 		t.Fatal("stale line must not create a shipper or be queued")
