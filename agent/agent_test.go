@@ -154,9 +154,10 @@ func TestKubernetesDiscoversNewPod(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	log := "2026-11-06T10:00:00Z stdout F first line\n" +
-		"2026-11-06T10:00:01Z stdout P long \n" +
-		"2026-11-06T10:00:01Z stdout F line\n"
+	now := time.Now().UTC().Format(time.RFC3339Nano) // recent: the hub skips lines older than 23h
+	log := now + " stdout F first line\n" +
+		now + " stdout P long \n" +
+		now + " stdout F line\n"
 	if err := os.WriteFile(filepath.Join(dir, "0.log"), []byte(log), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +192,7 @@ func TestKubernetesSkipsExistingBacklog(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "0.log")
-	if err := os.WriteFile(path, []byte("2026-11-06T09:00:00Z stdout F old news\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(time.Now().Add(-time.Minute).UTC().Format(time.RFC3339Nano)+" stdout F old news\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -203,7 +204,7 @@ func TestKubernetesSkipsExistingBacklog(t *testing.T) {
 
 	time.Sleep(700 * time.Millisecond)
 	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-	_, _ = f.WriteString("2026-11-06T10:00:00Z stdout F fresh\n")
+	_, _ = f.WriteString(time.Now().UTC().Format(time.RFC3339Nano) + " stdout F fresh\n")
 	_ = f.Close()
 
 	waitFor(t, "fresh line", func() bool { return strings.Contains(rcv.joined(), "fresh") })

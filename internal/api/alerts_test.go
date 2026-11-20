@@ -34,18 +34,18 @@ func TestChannelsAndRulesAPI(t *testing.T) {
 	// Channels: admin writes, editor reads, viewer is locked out.
 	require.Equal(t, 403, e.do("POST", "/api/v1/channels", editor, map[string]any{"name": "x", "url": hook.URL}).Code)
 	require.Equal(t, 400, e.do("POST", "/api/v1/channels", admin, map[string]any{"name": "x", "url": "nope"}).Code)
-	rec := e.do("POST", "/api/v1/channels", admin, map[string]any{"name": "ops", "url": hook.URL + "/h?token=abc", "secret": "s3"})
+	rec := e.do("POST", "/api/v1/channels", admin, map[string]any{"name": "ops", "url": hook.URL + "/h?token=abc", "secret": "webhook-signing-secret"})
 	require.Equal(t, 201, rec.Code, rec.Body.String())
 	ch := decodeBody[channelView](t, rec.Body.Bytes())
 	require.True(t, ch.HasSecret)
 	require.NotContains(t, rec.Body.String(), "token=abc", "full URL never leaves the server")
-	require.NotContains(t, rec.Body.String(), "s3")
+	require.NotContains(t, rec.Body.String(), "webhook-signing-secret")
 	require.Equal(t, 200, e.do("GET", "/api/v1/channels", editor, nil).Code)
 	require.Equal(t, 403, e.do("GET", "/api/v1/channels", viewer, nil).Code)
 
 	var raw models.NotificationChannel
 	require.NoError(t, e.srv.DB.First(&raw, "id = ?", ch.ID).Error)
-	require.NotContains(t, raw.Config, "s3", "secret is stored encrypted")
+	require.NotContains(t, raw.Config, "webhook-signing-secret", "secret is stored encrypted")
 
 	rec = e.do("POST", "/api/v1/channels/"+ch.ID+"/test", admin, nil)
 	require.Equal(t, 200, rec.Code)
