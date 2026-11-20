@@ -87,6 +87,9 @@ func main() {
 	}
 	st := LoadState(filepath.Join(stateDir, "state.json"))
 	hub := NewHub(url, key, parseLabels(os.Getenv("ARGUS_LABELS")))
+	// Services that ship Warn+ themselves through the logging SDK: skip those lines
+	// here so they are not stored twice (see sdkfilter.go).
+	hub.sdk = newSDKFilter(parseSet(os.Getenv("ARGUS_SDK_SERVICES")), os.Getenv("ARGUS_SDK_MIN_LEVEL"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

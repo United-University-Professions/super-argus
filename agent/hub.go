@@ -41,6 +41,10 @@ type Hub struct {
 	last    map[string]time.Time // last Send per stream, for idle eviction
 	dropped int64
 	stale   int64
+	dup     int64
+
+	// sdk drops lines a service already ships itself; nil means ship everything.
+	sdk *sdkFilter
 	stop    chan struct{}
 	once    sync.Once
 }
@@ -125,6 +129,16 @@ func (h *Hub) Send(labels map[string]string, ts time.Time, line string) {
 		h.mu.Unlock()
 		if n == 1 || n%10000 == 0 {
 			log.Printf("argus-agent: skipping lines older than %s the server would reject (%d skipped)", maxLineAge, n)
+		}
+		return
+	}
+	if h.sdk.skip(labels["service"], line) {
+		h.mu.Lock()
+		h.dup++
+		n := h.dup
+		h.mu.Unlock()
+		if n == 1 || n%10000 == 0 {
+			log.Printf("argus-agent: skipping lines the service ships via the SDK (%d skipped)", n)
 		}
 		return
 	}
